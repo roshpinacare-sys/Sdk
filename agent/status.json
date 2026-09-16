@@ -1,0 +1,15 @@
+{
+ "agent": "sdk-verify",
+ "generatedAt": "2026-09-16T21:11:57Z",
+ "verdict": "PASS",
+ "checks": {
+  "docsDirExists": 1,
+  "docsFiles": 37,
+  "broadcastsDirExists": 1,
+  "broadcastFiles": 29,
+  "rootDocuments": 17,
+  "totalFiles": 66,
+  "totalBytes": 82568
+ },
+ "reason": "sdk content intact"
+}
