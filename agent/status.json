@@ -1,13 +1,13 @@
 {
  "agent": "sdk-verify",
- "generatedAt": "2026-10-01T09:37:29Z",
+ "generatedAt": "2026-10-01T19:46:25Z",
  "verdict": "PASS",
  "checks": {
-  "docsDirExists": 1,
+  "docsDir": 1,
   "docsFiles": 37,
-  "broadcastsDirExists": 1,
+  "broadcastsDir": 1,
   "broadcastFiles": 29,
-  "rootDocuments": 18,
+  "rootDocs": 18,
   "totalFiles": 66,
   "totalBytes": 82568
  },
