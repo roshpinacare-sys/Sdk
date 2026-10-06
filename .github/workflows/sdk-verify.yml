@@ -7,10 +7,7 @@
 name: sdk-verify
 
 on:
-  schedule:
-    - cron: '23 9 * * *'
   workflow_dispatch:
-
 permissions:
   contents: write
 
