@@ -1,6 +1,6 @@
 {
  "agent": "sdk-verify",
- "generatedAt": "2026-10-07T11:45:01Z",
+ "generatedAt": "2026-10-07T14:36:16Z",
  "verdict": "PASS",
  "checks": {
   "docsDir": 1,
