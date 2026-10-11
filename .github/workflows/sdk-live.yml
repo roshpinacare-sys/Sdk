@@ -1,0 +1,40 @@
+# SDK-LIVE — @saos/fleet-sdk live selftest (T-58 revival)
+#
+# ROLE: runs the unified fleet SDK's honest selftest against the fleet's
+# public surfaces. The SDK's product IS this selftest — it proves, right now,
+# that a new agent can read the office state, the graph, the write-log, the
+# pnl-desk, the receipts, and independently verify the notary anchor.
+#
+# HONEST BILLING NOTE (measured org-wide since ~09-20): this is a PRIVATE repo
+# — Actions minutes are billing-walled; runs die at setup (0 steps, ~2s, empty
+# logs). That is the owner's billing decision, not a code failure. Dispatch-
+# ready, no cron on purpose: a schedule that cannot run is noise. Until then:
+#   bun sdk/selftest.mjs    # anywhere with bun or node >= 18
+#
+# fail-open-honest: red surfaces are recorded facts. אף-פעם לא מזויף-הצלחה.
+
+name: sdk-live
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-live
+  cancel-in-progress: false
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: SDK selftest (mocked + live + notary, honest exit)
+        run: bun sdk/selftest.mjs
