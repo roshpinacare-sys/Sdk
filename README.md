@@ -1,5 +1,14 @@
 # Sdk — broadcast archive and document inventory
 
+**ROLE (declared 2026-10-11, task 10-c un-silence sweep):** the
+**broadcast-archive twin of anchor-baseline** (SDK name is honestly wrong —
+see the naming note below; the Identity-SDK material lives in Adsmarket).
+Standing duty: same integrity law as anchor-baseline (manifest + PASS
+stamps), and it hosts a slice of the historical record. Why it was muted:
+duplicate evidence hoard, stalled 10-06 with the billing cutoff. Revival
+path: dispatch sdk-verify when minutes return; conformance of its archive
+integrity follows the anchor-baseline suite pattern.
+
 **Honest naming note (Task 11-e audit, 2026-09-30):** despite the repository
 name, there is currently **no SDK code in this repo**. The actual
 Identity Verification API / SDK material lives in
