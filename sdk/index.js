@@ -32,22 +32,58 @@ export const FLEET = {
   pnlDesk: 'https://raw.githubusercontent.com/roshpinacare-sys/Domain/main/dex/pnl-desk.json',
   receiptsIndex: 'https://api.github.com/repos/roshpinacare-sys/TruthRail/contents/receipts',
   receiptRaw: (name) => `https://raw.githubusercontent.com/roshpinacare-sys/TruthRail/main/receipts/${encodeURIComponent(name)}`,
-  anchor: 'https://raw.githubusercontent.com/roshpinacare-sys/saos-jummper/main/state/truthrail-anchor-latest.json',
+  anchor: 'https://raw.githubusercontent.com/roshpinacare-sys/TruthRail/main/anchors/truthrail-anchor-latest.json',
 };
+
+// raw.githubusercontent caches misses (~5min) — bust it for fresh pushes (T-58).
+const bust = (url) => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`;
 
 const sha256Hex = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const fromHex = (h) => Uint8Array.from(h.match(/../g).map((x) => parseInt(x, 16)));
 const cat = (a, b) => { const out = new Uint8Array(a.length + b.length); out.set(a); out.set(b, a.length); return out; };
 
-async function getJSON(url, opts = {}) {
+async function fetchBytes(url, opts = {}) {
   const r = await fetch(url, { signal: AbortSignal.timeout(opts.timeoutMs ?? 15000), headers: { 'User-Agent': 'saos-fleet-sdk/1.0 (keyless)' } });
-  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url.slice(0, 90)}`);
-  return r.json();
+  return { ok: r.ok, status: r.status, body: r.ok ? await r.arrayBuffer() : null };
+}
+const b64ToText = (b64) => Buffer.from(b64, 'base64').toString('utf-8');
+
+// Keyless fetch with fallback chain: raw.githubusercontent → cdn.jsdelivr.net →
+// api.github.com contents (unauth, base64). Rationale (measured T-58): raw CDN
+// has propagation lag for freshly-pushed files; jsDelivr mirrors public GitHub
+// repos keyless and propagates fast; the unauth API is the last resort
+// (60 req/h per IP). The SDK must work from ANYwhere, not just a warm cache.
+function variantsFor(url) {
+  const m = url.match(/^https:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/(?:refs\/)?(main|master)\/(.+)$/);
+  if (!m) return [url];
+  const [, owner, repo, br, path] = m;
+  return [
+    url,
+    `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${br}/${path}`,
+    `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${br}`,
+  ];
+}
+async function keylessText(url, opts = {}) {
+  const vs = variantsFor(url);
+  let lastErr = null;
+  for (let i = 0; i < vs.length; i++) {
+    const { ok, status, body } = await fetchBytes(vs[i], opts);
+    if (ok) {
+      if (i === 2) {
+        const j = JSON.parse(Buffer.from(body).toString('utf-8'));
+        if (j.content) return b64ToText(j.content);
+        lastErr = new Error(`contents api: ${j.message ?? 'no content'}`);
+      } else return Buffer.from(body).toString('utf-8');
+    } else lastErr = new Error(`HTTP ${status} for ${vs[i].slice(0, 90)}`);
+  }
+  throw lastErr ?? new Error(`all keyless variants failed for ${url.slice(0, 90)}`);
+}
+
+async function getJSON(url, opts = {}) {
+  return JSON.parse(await keylessText(url, opts));
 }
 async function getText(url, opts = {}) {
-  const r = await fetch(url, { signal: AbortSignal.timeout(opts.timeoutMs ?? 15000), headers: { 'User-Agent': 'saos-fleet-sdk/1.0 (keyless)' } });
-  if (!r.ok) throw new Error(`HTTP ${r.status} for ${url.slice(0, 90)}`);
-  return r.text();
+  return keylessText(url, opts);
 }
 
 // ── Merkle (port of saos-jummper src/jumpper/merkle.py — odd node DUPLICATED,
@@ -99,20 +135,29 @@ export function merkleVerify(leaf, path, expectedRoot) {
 }
 
 // ── Surface readers (all keyless) ────────────────────────────────────────────
-export const readOfficeState = () => getJSON(FLEET.officeState);
-export const readFleetGraph = () => getJSON(FLEET.fleetGraph);
+export const readOfficeState = () => getJSON(bust(FLEET.officeState));
+export const readFleetGraph = () => getJSON(bust(FLEET.fleetGraph));
 export async function readWriteLog() {
-  const text = await getText(FLEET.writeLog);
+  const text = await getText(bust(FLEET.writeLog));
   return text.trim().split('\n').map((l) => JSON.parse(l));
 }
-export const readPnlDesk = () => getJSON(FLEET.pnlDesk);
+export const readPnlDesk = () => getJSON(bust(FLEET.pnlDesk));
 export async function listReceipts() {
-  const arr = await getJSON(FLEET.receiptsIndex);
-  if (!Array.isArray(arr)) throw new Error('receipts index is not a list');
-  return arr.map((x) => ({ name: x.name, size: x.size }));
+  try {
+    const arr = await getJSON(FLEET.receiptsIndex);
+    if (!Array.isArray(arr)) throw new Error('receipts index is not a list');
+    return arr.map((x) => ({ name: x.name, size: x.size }));
+  } catch (e) {
+    // Rate-limited or blocked → keyless fallback: jsDelivr's flat file tree.
+    const r = await fetch('https://data.jsdelivr.com/v1/packages/gh/roshpinacare-sys/TruthRail@main?structure=flat', { signal: AbortSignal.timeout(15000), headers: { 'User-Agent': 'saos-fleet-sdk/1.0 (keyless)' } });
+    if (!r.ok) throw new Error(`receipts index failed both paths: ${String(e.message).slice(0, 60)} + jsdelivr HTTP ${r.status}`);
+    const tree = await r.json();
+    return (tree.files ?? []).filter((f) => f.name.startsWith('/receipts/') && f.name.endsWith('.json'))
+      .map((f) => ({ name: f.name.replace('/receipts/', ''), size: f.size }));
+  }
 }
-export const readReceipt = (name) => getJSON(FLEET.receiptRaw(name));
-export const readAnchor = () => getJSON(FLEET.anchor);
+export const readReceipt = (name) => getJSON(bust(FLEET.receiptRaw(name)));
+export const readAnchor = () => getJSON(bust(FLEET.anchor));
 
 // ── Independent anchor verification (the SDK's crown jewel) ──────────────────
 // Recompute the root from the leaf list; verify every inclusion proof; fetch
@@ -133,7 +178,7 @@ export async function verifyAnchor(anchor) {
   if (leafHashes.length) {
     try {
       const idx = proofs.length ? leavesIndexOf(anchor, proofs[0].path) : 0;
-      const receipt = await getText(FLEET.receiptRaw(anchor.leaves[idx].path));
+      const receipt = await getText(bust(FLEET.receiptRaw(anchor.leaves[idx].path)));
       const actual = sha256Hex(new TextEncoder().encode(receipt));
       spot = { path: anchor.leaves[idx].path, match: actual === anchor.leaves[idx].sha256 };
       if (!spot.match) errors.push(`spot-check bytes mismatch for ${spot.path}`);
